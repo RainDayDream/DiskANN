@@ -843,6 +843,10 @@ uint32_t optimize_beamwidth(std::unique_ptr<diskann::PQFlashIndex<T, LabelT>> &p
     return best_bw;
 }
 
+
+/*
+将索引保存在disk
+*/
 template <typename T>
 void create_disk_layout(const std::string base_file, const std::string mem_index_file, const std::string output_file,
                         const std::string reorder_data_file)
@@ -1096,6 +1100,10 @@ void create_disk_layout(const std::string base_file, const std::string mem_index
     diskann::save_bin<uint64_t>(output_file, output_file_meta.data(), output_file_meta.size(), 1, 0);
     diskann::cout << "Output disk index file written to " << output_file << std::endl;
 }
+
+/*
+建立disk上的索引
+*/
 
 template <typename T, typename LabelT>
 int build_disk_index(const char *dataFilePath, const char *indexFilePath, const char *indexBuildParameters,

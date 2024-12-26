@@ -1,6 +1,7 @@
+from ctypes import sizeof
 import numpy as np
 import diskannpy as dap
-
+import struct
 import os
 import psutil
 import GPUtil
@@ -97,20 +98,96 @@ def monitor_function(func, csv_file_path, *args, **kwargs):
     return result
 
 
+
+
 def read_fvecs(file_path):
     nodes = 0
     with open(file_path, 'rb') as f:
-        while True:
-            # 读取向量的维度
-            dim_bytes = f.read(4)
-            if not dim_bytes:
-                break
-            dim = int(np.frombuffer(dim_bytes, dtype=np.int32)[0])
-            # 读取向量的各个分量
+        points = struct.unpack('i', f.read(4))[0]  # 读取向量个数
+        dim = struct.unpack('i', f.read(4))[0]    # 读取向量维度
+        file_size = os.path.getsize(file_path)
+        expected_size = 8 + points * dim * 4
+        if file_size != expected_size:
+            raise ValueError(f"File size {file_size} does not match expected size {expected_size}.")
+        else:
+            print(f"points: {points}, dim: {dim}")
+        print(f"points: {points}, dim: {dim}")
+        while nodes < points:  # 读取向量的各个分量
             vector = np.frombuffer(f.read(4 * dim), dtype=np.float32)
             yield vector
-            print(f"node: {nodes}, prefix: {dim}, vector: {vector}")
+            # print(f"node: {nodes}, vector: {vector}")
             nodes += 1
+        data = f.read(1)
+        if not data:  # 检测 EOF
+            print("End of file reached.")
+        else:
+            raise ValueError(f"Extra data found in file: {data}")
+        # exit()
+
+
+def read_bvecs(file_path):
+    nodes = 0
+    with open(file_path, 'rb') as f:
+        points = struct.unpack('i', f.read(4))[0]  # 读取向量个数
+        dim = struct.unpack('i', f.read(4))[0]    # 读取向量维度
+        file_size = os.path.getsize(file_path)
+        expected_size = 8 + points * dim  # 每个向量 dim 个 unsigned char
+        if file_size != expected_size:
+            raise ValueError(f"File size {file_size} does not match expected size {expected_size}.")
+        else:
+            print(f"points: {points}, dim: {dim}")
+        while nodes < points:  # 读取向量的各个分量
+            vector = np.frombuffer(f.read(dim), dtype=np.uint8)  # 每个分量是 unsigned char
+            yield vector
+            nodes += 1
+        data = f.read(1)
+        if not data:  # 检测 EOF
+            print("End of file reached.")
+        else:
+            raise ValueError(f"Extra data found in file: {data}")
+
+def read_ivecs(file_path):
+    nodes = 0
+    with open(file_path, 'rb') as f:
+        points = struct.unpack('i', f.read(4))[0]  # 读取向量个数
+        dim = struct.unpack('i', f.read(4))[0]    # 读取向量维度
+        file_size = os.path.getsize(file_path)
+        expected_size = 8 + points * dim * 4  # 每个向量 dim 个 int
+        if file_size != expected_size:
+            raise ValueError(f"File size {file_size} does not match expected size {expected_size}.")
+        else:
+            print(f"points: {points}, dim: {dim}")
+        while nodes < points:  # 读取向量的各个分量
+            vector = np.frombuffer(f.read(dim * 4), dtype=np.int32)  # 每个分量是 int
+            yield vector
+            nodes += 1
+        data = f.read(1)
+        if not data:  # 检测 EOF
+            print("End of file reached.")
+        else:
+            raise ValueError(f"Extra data found in file: {data}")
+
+
+def read_vectors(file_path, dtype, element_size):
+    nodes = 0
+    with open(file_path, 'rb') as f:
+        points = struct.unpack('i', f.read(4))[0]  # 读取向量个数
+        dim = struct.unpack('i', f.read(4))[0]    # 读取向量维度
+        file_size = os.path.getsize(file_path)
+        expected_size = 8 + points * dim * element_size
+        if file_size != expected_size:
+            raise ValueError(f"File size {file_size} does not match expected size {expected_size}.")
+        else:
+            print(f"points: {points}, dim: {dim}")
+        while nodes < points:  # 读取向量的各个分量
+            vector = np.frombuffer(f.read(dim * element_size), dtype=dtype)
+            yield vector
+            nodes += 1
+        data = f.read(1)
+        if not data:  # 检测 EOF
+            print("End of file reached.")
+        else:
+            raise ValueError(f"Extra data found in file: {data}")
 
 
 #index保存路径
@@ -118,9 +195,9 @@ index_dir = "./index/" # you can put this wherever you want, but make sure it's 
 os.makedirs(index_dir, exist_ok=True)
 
 #需要建立索引的向量数据所在路径
-base_vec_dir = "/home/xym/anns/DiskANN/build/data/sift/sift_learn.fbin"
+base_vec_dir = "/home/xym/anns/DiskANN/build/data/gist/gist_learn.fbin"
 #query向量数据所在路径
-query_vec_dir = "/home/xym/anns/DiskANN/build/data/sift/sift_query.fbin"
+query_vec_dir = "/home/xym/anns/DiskANN/build/data/gist/gist_query.fbin"
 
 
 # Commonalities
@@ -147,7 +224,7 @@ vecs = my_set_of_vectors
 #建立索引并保存
 dap.build_disk_index(
     # data=vecs,
-    data="/home/xym/anns/DiskANN/build/data/sift/sift_learn.fbin",
+    data=base_vec_dir,
     distance_metric="l2", # can also be cosine, especially if you don't normalize your vectors like above
     index_directory=index_dir,
     complexity=128,  # the larger this is, the more candidate points we consider when ranking
@@ -156,7 +233,7 @@ dap.build_disk_index(
     build_memory_maximum=128.00, # a floating point number to represent how much memory in GB we are allocating for the index building process
     num_threads=0,  # 0 means use all available threads - but if you are in a shared environment you may need to restrict how greedy you are
     vector_dtype=my_dtype,  # we specified this in the Commonalities section above
-    index_prefix="disk_index_ann",  # ann is the default anyway. all files generated will have the prefix `ann_`, in the form of `f"{index_prefix}_"`
+    index_prefix="gist_disk_index_ann",  # ann is the default anyway. all files generated will have the prefix `ann_`, in the form of `f"{index_prefix}_"`
     pq_disk_bytes=0  # using product quantization of your vectors can still achieve excellent recall characteristics at a fraction of the latency, but we'll do it without PQ for now
 )
 
@@ -165,7 +242,7 @@ index = dap.StaticDiskIndex(
     index_directory=index_dir,
     num_threads=0,
     num_nodes_to_cache=1_000_000,
-    index_prefix="disk_index_ann",
+    index_prefix="gist_disk_index_ann",
     distance_metric = "l2",
     vector_dtype = my_dtype
 )
@@ -191,24 +268,24 @@ print("Distances:", distances)
 
 
 
-#多个查询进行batch查询
-# import multiprocessing
+# 多个查询进行batch查询
+import multiprocessing
 
-# internal_indices, distances = index.batch_search(
-#     queries=q,
-#     k_neighbors=25,
-#     complexity=50,
-#     num_threads=multiprocessing.cpu_count(), # there's a current bug where this is not handling the value 0 properly
-#     beam_width=8 # beamwidth is the parameter that indicates our parallelism of individual searches, whereas num_threads 
-#     # indicates the number of threads *per* query item in the batch
-# )
-# # note that in batch_query form, our internal_indices and distances are 2d arrays
+internal_indices, distances = index.batch_search(
+    queries=query_vectors,
+    k_neighbors=1,
+    complexity=50,
+    num_threads=multiprocessing.cpu_count(), # there's a current bug where this is not handling the value 0 properly
+    beam_width=8 # beamwidth is the parameter that indicates our parallelism of individual searches, whereas num_threads 
+    # indicates the number of threads *per* query item in the batch
+)
+# note that in batch_query form, our internal_indices and distances are 2d arrays
 
-# print("查询结果:")
-# print("-----------------------------------------")
-# print(internal_indices)
-# print("-----------------------------------------")
-# print(distances)
+print("查询结果:")
+print("-----------------------------------------")
+print(internal_indices)
+print("-----------------------------------------")
+print(distances)
 # actual_neighbors = np.full(shape=internal_indices.shape, dtype=str, fill_value="")
 # for row in range(internal_indices.shape[0]):
 #     actual_neighbors[row] = index_to_identifiers_map[internal_indices[row]]
